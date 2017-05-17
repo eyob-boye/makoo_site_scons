@@ -91,10 +91,12 @@ for (dst, url, ver) in IMPORTED_COMPONENTS:
     else:
         dst = trgt_env.Dir(url).abspath
 
-    if ("esp-idf" in os.path.basename(dst)) and not trgt_env.has_key("esp_idf"):
-        trgt_env["esp_idf"] = dst
+    if ("esp-idf" in os.path.basename(dst)):
+        if not trgt_env.has_key("esp_idf"):
+            trgt_env["esp_idf"] = dst
     else:
         result["components"].append(dst)
+        #print(result)
 
     # Visit the destination and do a recursive call on script file
     script_file = os.path.join(dst, 'sconscript')
@@ -105,9 +107,10 @@ for (dst, url, ver) in IMPORTED_COMPONENTS:
         CDT.script_exit(dst, '*')
 
 
+trgt_env.MergeDicts(trgt_env["result"], result)
+
 # If this is being called by a non-root script, then we return early.
 if not this_is_root_script:
-    trgt_env.MergeDicts(trgt_env["result"], result)
     CDT.script_exit(get_caller_path())
     Return()
 
