@@ -22,7 +22,7 @@
 # shall not be used in advertising or otherwise to promote the sale, use or other
 # dealings in this Software without prior written authorization.
 #-------------------------------------------------------------------------------
-import os, urlparse, comp_dep_tree
+import os, urlparse, comp_dep_tree, tinypy_build
 EnsurePythonVersion(2,7)
 EnsureSConsVersion(2,0,0)
 
@@ -30,17 +30,17 @@ EnsureSConsVersion(2,0,0)
 # create the environment and CDT, then export them for subsequent uses of this
 # script.
 try:
-    Import('trgt_env')
+    Import("trgt_env")
     this_is_root_script = False
 except :
     this_is_root_script = True
     trgt_env = Environment(tools = ['Git'])
-    trgt_env["result"] = {"components":[]}
+    trgt_env["result"] = {"components":[], "tpy_modules":[]}
     CDT = comp_dep_tree.ComponentDepTree()
-    Export('trgt_env', 'CDT')
+    Export("trgt_env", "CDT")
 
 if not this_is_root_script:
-    Import('CDT')
+    Import("CDT")
 
 
 def get_caller_path():
@@ -57,12 +57,17 @@ def get_caller_path():
 
 CDT.script_enter(get_caller_path())
 
-Import('COMPONENT_NAME', 'IMPORTED_COMPONENTS')
+Import("COMPONENT_NAME", "IMPORTED_COMPONENTS")
+# Forgive if the component does not export this variable
+try:
+    Import("TPY_MODULES")
+except:
+    TPY_MODULES = []
 
 #-----------------------------------------------------------------------------
 # Iterate through each imported dependency
 #-----------------------------------------------------------------------------
-result = {"components":[]}
+result = {"components":[], "tpy_modules":[]}
 for (dst, url, ver) in IMPORTED_COMPONENTS:
     # Check if the url
     url_path = urlparse.urlparse(url)
@@ -97,7 +102,7 @@ for (dst, url, ver) in IMPORTED_COMPONENTS:
     else:
         result["components"].append(dst)
         #print(result)
-
+        
     # Visit the destination and do a recursive call on script file
     script_file = os.path.join(dst, 'sconscript')
     if os.path.isfile(script_file):
@@ -105,6 +110,19 @@ for (dst, url, ver) in IMPORTED_COMPONENTS:
     else:
         CDT.script_enter(dst, '*')
         CDT.script_exit(dst, '*')
+
+#-----------------------------------------------------------------------------
+# Append the component's tinypy modules to the result. If the component is
+# saying a folder is the tinypy module then, pickup all the py files out of
+# that folder.
+#-----------------------------------------------------------------------------
+for m in TPY_MODULES:
+    m_abs = os.path.abspath(os.path.join(get_caller_path(), m))
+    if os.path.isdir(m_abs):
+        for mm in trgt_env.FindComponentFiles(['py'], exclude=[], search_root=m_abs, recursive=False):
+            result["tpy_modules"].append(mm.abspath)
+    else:
+        result["tpy_modules"].append(m_abs)
 
 
 trgt_env.MergeDicts(trgt_env["result"], result)
@@ -125,6 +143,22 @@ def path_to_posix(path):
         path_posix = "/" + path_posix
     return path_posix
 
+# Build the tinypy modules and their initialization routines. Append to the
+# component list once done.
+tinypy_root = None
+for c in trgt_env["result"]["components"]:
+    if "tinypy" in os.path.basename(c):
+        tinypy_root = c
+tinypy_module_buildpath = os.path.join(os.path.abspath(trgt_env.Dir("#").abspath),"tpy_modules")
+if tinypy_root and trgt_env["result"]["tpy_modules"]:
+    if not os.path.isdir(tinypy_module_buildpath):
+        os.mkdir(tinypy_module_buildpath)
+    tinypy_build.build(trgt_env["result"]["tpy_modules"],
+                       tinypy_root, 
+                       tinypy_module_buildpath)
+    trgt_env["result"]["components"].append(tinypy_module_buildpath)
+
+# Build the project make file
 prj_make_file_fmt = r"""
 IDF_PATH := %s
 export IDF_PATH
@@ -147,5 +181,6 @@ prj_make_file = prj_make_file_fmt % (
 ofile_name = trgt_env.File("#Makefile").abspath
 with open(ofile_name, "w") as ofile:
     ofile.write(prj_make_file)
+
 
 CDT.script_exit(get_caller_path())
