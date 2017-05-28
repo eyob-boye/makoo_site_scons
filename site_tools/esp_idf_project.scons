@@ -149,14 +149,25 @@ tinypy_root = None
 for c in trgt_env["result"]["components"]:
     if "tinypy" in os.path.basename(c):
         tinypy_root = c
-tinypy_module_buildpath = os.path.join(os.path.abspath(trgt_env.Dir("#").abspath),"tpy_modules")
-if tinypy_root and trgt_env["result"]["tpy_modules"]:
-    if not os.path.isdir(tinypy_module_buildpath):
-        os.mkdir(tinypy_module_buildpath)
-    tinypy_build.build(trgt_env["result"]["tpy_modules"],
-                       tinypy_root, 
-                       tinypy_module_buildpath)
-    trgt_env["result"]["components"].append(tinypy_module_buildpath)
+
+if tinypy_root:
+    # First build the blob and then set as the new tinypy component
+    tinypy_app_buildpath = trgt_env.Dir("#imported/tinypy_app").abspath
+    if not os.path.isdir(tinypy_app_buildpath):
+        os.mkdir(tinypy_app_buildpath)
+    tinypy_build.build_blob(["math"],
+                            tinypy_root,
+                            tinypy_app_buildpath)
+
+    # Then build the python module byte codes and their init code
+    if trgt_env["result"]["tpy_modules"]:
+        tinypy_build.build_app(trgt_env["result"]["tpy_modules"],
+                               tinypy_root, 
+                               tinypy_app_buildpath)
+
+    trgt_env["result"]["components"].remove(c)
+    trgt_env["result"]["components"].append(tinypy_app_buildpath)
+
 
 # Build the project make file
 prj_make_file_fmt = r"""

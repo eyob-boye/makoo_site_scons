@@ -27,6 +27,7 @@ import sys
 import modulefinder
 import level_tree
 import operator
+import shutil
 
 
 
@@ -137,7 +138,7 @@ def build_bc(tp_modules=[], tinypy_path=".", outdir="."):
         #-nopos option strips out the python source location information when
         # exception happens during runtime.
         #do_cmd('python %s %s %s'%(py2bc_cmd, m, m_out))
-        do_cmd('python %s %s %s -nopos'%(py2bc_cmd, m, m_out))
+        do_cmd('"%s" %s %s %s -nopos'%(sys.executable, py2bc_cmd, m, m_out))
         out.append("""const unsigned char tp_%s[] = {""" % m_name)
         data = open(m_out,'rb').read()
         cols = 16
@@ -150,7 +151,43 @@ def build_bc(tp_modules=[], tinypy_path=".", outdir="."):
     f.write('\n'.join(out))
     f.close()
 
-def build(tp_modules=[], tinypy_path=".", outdir="."):
+def path_to_posix(path):
+    os.path.abspath(path)
+    path_posix = path.replace(":", "").replace("\\", "/")
+    if path_posix[0] != "/":
+        path_posix = "/" + path_posix
+    return path_posix
+
+def build_blob(tp_internal_modules=[], tinypy_path=".", outdir="."):
+    """ This function generates the tinypy system files as one big file (i.e blob)
+    """
+    do_cmd('"%s" %s blob %s > %s' % (sys.executable, os.path.join(tinypy_path, "setup.py"), " ".join(tp_internal_modules), os.devnull))
+    src_root = os.path.join(tinypy_path,"build")
+    for f in ["tinypy.c", "tinypy.h", "tinypy_libs.c"]:
+        shutil.copy(os.path.join(src_root, f), os.path.join(outdir, f))
+
+    out_1 = ["""#""",
+             """# Component make file""",
+             """#""",
+             """""",
+             """COMPONENT_SRCDIRS := .""",
+             """""",
+    ]
+    priv_includes = []
+    for m in tp_internal_modules:
+        priv_include = os.path.relpath(os.path.join(tinypy_path,"modules", m), os.path.abspath(outdir))
+        priv_includes.append(path_to_posix(priv_include))
+    out_1.append("""COMPONENT_PRIV_INCLUDEDIRS := . %s""" % " ".join(priv_includes))
+    out_1.append("""""")
+    out_1.append("""COMPONENT_ADD_INCLUDEDIRS := .""")
+    out_1.append("""""")
+    with open(os.path.join(outdir, "component.mk"), "w") as ofile:
+        ofile.write("\n".join(out_1))
+
+def build_app(tp_modules=[], tinypy_path=".", outdir="."):
+    """ This function generates the byte codes for tinypy modules and also generates
+    c code to initialize them.
+    """
     tp_modules_abs = []
     for m in tp_modules:
         tp_modules_abs.append(os.path.abspath(m))
