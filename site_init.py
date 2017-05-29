@@ -163,6 +163,32 @@ def _ExtendEnvironment(envclass):
     envclass.GetComponentFromGit = _GetComponentFromGit
     envclass.FindComponentFiles = _FindComponentFiles
     envclass.MergeDicts = _MergeDicts
-
 _ExtendEnvironment(SCons.Environment.Environment)
+
+
+import SCons.Script
+__site_init_file = os.path.abspath(__file__)
+def _MakooSiteSconsGetPath(item):
+    """ Given an item name, this function gets the absolute
+    path of the item, within the site_scons or site_tools
+    subfolder. This function exists to make sure that
+    scripts that reference items in this folder do not have
+    to be worried where site_scons folder is placed.
+    """
+    site_scons_path = os.path.dirname(__site_init_file)
+    if not item:
+        return site_scons_path
+    else:
+        item_abs = os.path.join(site_scons_path, item)
+        if os.path.isfile(item_abs):
+            return item_abs
+        item_abs = os.path.join(site_scons_path, "site_tools", item)
+        if os.path.isfile(item_abs):
+            return item_abs
+        print("Error: Cannot find [%s] in [%s]." % (item,site_scons_path))
+        return None
+
+SCons.Script.MakooSiteSconsGetPath = _MakooSiteSconsGetPath
+
+
 

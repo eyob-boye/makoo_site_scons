@@ -68,7 +68,7 @@ def sort_by_dependency(tp_modules):
     return lt_levels_result_sorted
 
 def build_inits(tp_modules, outdir="."):
-    """ Generate two files tp_app.c and t_app.h that contain the user module
+    """ Generate two files tp_app.c and tp_app.h that contain the user module
     initializations. It is assumed that the module list is in order of low
     to higher dependencies. This is important since a module that imports another
     module will fail to initialize if the imported module has not been already
