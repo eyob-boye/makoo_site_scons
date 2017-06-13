@@ -185,10 +185,48 @@ def _MakooSiteSconsGetPath(item):
         item_abs = os.path.join(site_scons_path, "site_tools", item)
         if os.path.isfile(item_abs):
             return item_abs
-        print("Error: Cannot find [%s] in [%s]." % (item,site_scons_path))
+        print("Error: Makoo Cannot find [%s] in [%s]." % (item,site_scons_path))
         return None
 
+def _MakooCommonScript(makoo_common_script_key=None):
+    """ Given a key that identifies a builder, this function gets the
+    script that matches the key. If the given key is not saved globally
+    then we save it for subsequent calls that will call this function
+    without a key. This function is used to make makoo work with different
+    kind of builders. SConstruct can set the key at the beginning of 
+    scons call. But then, every re-usable component that does not
+    care about which builder builds it can just call with None parameter.
+    """
+    prj_scons = ""
+    prj_scons_abspath = None
+
+    try:
+        prj_scons_saved = "%s_project.scons" % SCons.Script.MakooCommonScriptKey
+    except:
+        prj_scons_saved = None
+                
+    if makoo_common_script_key:
+        prj_scons = "%s_project.scons" % makoo_common_script_key
+        if prj_scons_saved:
+            if makoo_common_script_key != SCons.Script.MakooCommonScriptKey:
+                print("Error: Changing Makoo project builder from %s to %s not allowed." % (prj_scons_saved, prj_scons))
+                prj_scons_abspath = None
+            else:
+                prj_scons_abspath = _MakooSiteSconsGetPath(prj_scons)
+        else:
+            SCons.Script.MakooCommonScriptKey = makoo_common_script_key
+            prj_scons_abspath = _MakooSiteSconsGetPath(prj_scons)
+    else:
+        if prj_scons_saved:
+            prj_scons_abspath = _MakooSiteSconsGetPath(prj_scons_saved)
+        else:
+            SCons.Script.MakooCommonScriptKey = makoo_common_script_key
+            prj_scons_saved = "%s_project.scons" % Scons.Script.MakooCommonScriptKey
+            prj_scons_abspath = _MakooSiteSconsGetPath(prj_scons_saved)
+    return prj_scons_abspath
+    
 SCons.Script.MakooSiteSconsGetPath = _MakooSiteSconsGetPath
+SCons.Script.MakooCommonScript = _MakooCommonScript
 
 
 
