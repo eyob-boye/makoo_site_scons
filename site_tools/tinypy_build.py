@@ -158,6 +158,12 @@ def path_to_posix(path):
         path_posix = "/" + path_posix
     return path_posix
 
+def get_pp_include_paths(tp_internal_modules=[], tinypy_path="."):
+    pp_includes = []
+    for m in tp_internal_modules:
+        pp_includes.append(os.path.join(tinypy_path,"modules", m))
+    return pp_includes
+
 def build_blob(tp_internal_modules=[], tinypy_path=".", outdir="."):
     """ This function generates the tinypy system files as one big file (i.e blob)
     """
@@ -174,8 +180,8 @@ def build_blob(tp_internal_modules=[], tinypy_path=".", outdir="."):
              """""",
     ]
     priv_includes = []
-    for m in tp_internal_modules:
-        priv_include = os.path.relpath(os.path.join(tinypy_path,"modules", m), os.path.abspath(outdir))
+    for p in get_pp_include_paths(tp_internal_modules, tinypy_path):
+        priv_include = os.path.relpath(p, os.path.abspath(outdir))
         priv_includes.append(path_to_posix(priv_include))
     out_1.append("""COMPONENT_PRIV_INCLUDEDIRS := . %s""" % " ".join(priv_includes))
     out_1.append("""""")

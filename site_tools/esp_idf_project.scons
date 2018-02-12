@@ -35,7 +35,7 @@ try:
 except :
     this_is_root_script = True
     trgt_env = Environment(tools = ['Git'])
-    trgt_env["result"] = {"components":[], "tpy_modules":[]}
+    trgt_env["result"] = {"components":[], "tpy_modules":[], "components_srcdirs":{}}
     CDT = comp_dep_tree.ComponentDepTree()
     Export("trgt_env", "CDT")
 
@@ -60,14 +60,45 @@ CDT.script_enter(get_caller_path())
 Import("COMPONENT_NAME", "IMPORTED_COMPONENTS")
 # Forgive if the component does not export this variable
 try:
-    Import("TPY_MODULES")
+    Import("COMPONENT_TPY_MODULES")
 except:
-    TPY_MODULES = []
+    COMPONENT_TPY_MODULES = []
+
+# Forgive if the componen does not export this variable
+try:
+    Import("COMPONENT_SRCDIRS")
+except:
+    COMPONENT_SRCDIRS = ["."]
+
+#-----------------------------------------------------------------------------
+# If the script that called this generic script exported srcdirs then save it.
+#-----------------------------------------------------------------------------
+c_abs = os.path.abspath(get_caller_path())
+if not trgt_env["result"]["components_srcdirs"].has_key(c_abs):
+    trgt_env["result"]["components_srcdirs"][c_abs] = COMPONENT_SRCDIRS
+
+#-----------------------------------------------------------------------------
+# If the script that called this generic script is a root add as a component
+#-----------------------------------------------------------------------------
+if this_is_root_script:
+    trgt_env["result"]["components"].append(c_abs)
+
+#-----------------------------------------------------------------------------
+# Append the component's tinypy modules to the result. If the component is
+# saying a folder is the tinypy module then, pickup all the py files out of
+# that folder.
+#-----------------------------------------------------------------------------
+for m in COMPONENT_TPY_MODULES:
+    m_abs = os.path.abspath(os.path.join(get_caller_path(), m))
+    if os.path.isdir(m_abs):
+        for mm in trgt_env.FindComponentFiles(['py'], exclude=[], search_root=m_abs, recursive=False):
+            trgt_env["result"]["tpy_modules"].append(mm.abspath)
+    else:
+        trgt_env["result"]["tpy_modules"].append(m_abs)
 
 #-----------------------------------------------------------------------------
 # Iterate through each imported dependency
 #-----------------------------------------------------------------------------
-result = {"components":[], "tpy_modules":[]}
 for (dst, url, ver) in IMPORTED_COMPONENTS:
     # Check if the url
     url_path = urlparse.urlparse(url)
@@ -100,32 +131,15 @@ for (dst, url, ver) in IMPORTED_COMPONENTS:
         if not trgt_env.has_key("esp_idf"):
             trgt_env["esp_idf"] = dst
     else:
-        result["components"].append(dst)
-        #print(result)
+        trgt_env["result"]["components"].append(dst)
         
     # Visit the destination and do a recursive call on script file
     script_file = os.path.join(dst, 'sconscript')
     if os.path.isfile(script_file):
-        r = SConscript(script_file)
+        SConscript(script_file)
     else:
         CDT.script_enter(dst, '*')
         CDT.script_exit(dst, '*')
-
-#-----------------------------------------------------------------------------
-# Append the component's tinypy modules to the result. If the component is
-# saying a folder is the tinypy module then, pickup all the py files out of
-# that folder.
-#-----------------------------------------------------------------------------
-for m in TPY_MODULES:
-    m_abs = os.path.abspath(os.path.join(get_caller_path(), m))
-    if os.path.isdir(m_abs):
-        for mm in trgt_env.FindComponentFiles(['py'], exclude=[], search_root=m_abs, recursive=False):
-            result["tpy_modules"].append(mm.abspath)
-    else:
-        result["tpy_modules"].append(m_abs)
-
-
-trgt_env.MergeDicts(trgt_env["result"], result)
 
 # If this is being called by a non-root script, then we return early.
 if not this_is_root_script:
@@ -143,13 +157,17 @@ def path_to_posix(path):
         path_posix = "/" + path_posix
     return path_posix
 
+# Eliminate duplicates without messing the original order
+trgt_env["result"]["components"] = sorted(set(trgt_env["result"]["components"]), key=lambda x:trgt_env["result"]["components"].index(x))
+
 # Build the tinypy modules and their initialization routines. Append to the
 # component list once done.
 tinypy_root = None
-for c in trgt_env["result"]["components"]:
-    if "tinypy" in os.path.basename(c):
+for c in sorted(trgt_env["result"]["components"]):
+    if "tinypy" in os.path.basename(c)[:6]:
         tinypy_root = c
 
+tinypy_includes = []
 if tinypy_root:
     # First build the blob and then set as the new tinypy component
     tinypy_app_buildpath = trgt_env.Dir("#imported/tinypy_app").abspath
@@ -158,6 +176,7 @@ if tinypy_root:
     tinypy_build.build_blob(["math"],
                             tinypy_root,
                             tinypy_app_buildpath)
+    tinypy_includes = tinypy_build.get_pp_include_paths(["math"], tinypy_root)
 
     # Then build the python module byte codes and their init code
     if trgt_env["result"]["tpy_modules"]:
@@ -165,7 +184,7 @@ if tinypy_root:
                                tinypy_root, 
                                tinypy_app_buildpath)
 
-    trgt_env["result"]["components"].remove(c)
+    trgt_env["result"]["components"].remove(tinypy_root)
     trgt_env["result"]["components"].append(tinypy_app_buildpath)
 
 
@@ -177,7 +196,7 @@ export IDF_PATH
 
 PROJECT_NAME := %s
 
-SRCDIRS = %s %s
+SRCDIRS = %s
 
 include $(IDF_PATH)/make/project.mk
 """
@@ -185,7 +204,6 @@ include $(IDF_PATH)/make/project.mk
 prj_make_file = prj_make_file_fmt % (
        path_to_posix(trgt_env["esp_idf"]),
        COMPONENT_NAME,
-       path_to_posix(os.path.abspath(trgt_env.Dir("#").abspath)),
        " ".join([path_to_posix(c) for c in trgt_env["result"]["components"]])
        )
 
