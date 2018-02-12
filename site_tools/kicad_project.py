@@ -38,6 +38,7 @@ def kicadprj_Emitter(target, source, env):
     if len(target) < 3:
         # third target is footprint lib table specific to the kicad project.
         target.append("fp-lib-table")
+        target.append("sym-lib-table")
     return target, source
 
 
@@ -127,24 +128,25 @@ def kicad_schematic_builder(target, source, env):
     fs = target[1]
 
     if os.path.isfile(fs.abspath):
-        # If .sch file exists, then open it and reconstruct the LIB: lines
-        # preserving everything else.
-        with open(fs.abspath, 'r') as ifile:
-            sch_file_cont_lines = []
-            LIBS_lines = []
-            for line in ifile.readlines():
-                if "LIBS:" in line:
-                    LIBS_lines.append(line)
-                    if len(LIBS_lines) == 1:
-                        line = "%s\n"
-                    else:
-                        line = None
-                if line is not None:
-                    sch_file_cont_lines.append(line)
-            sch_file_cont = "".join(sch_file_cont_lines)
-            if sch_file_cont.count("%s") != 1:
-                print("Error: Could not find the LIBS: lines in %s" % target[0].name)
-                env.Exit(1)
+        ## If .sch file exists, then open it and reconstruct the LIB: lines
+        ## preserving everything else.
+        #with open(fs.abspath, 'r') as ifile:
+        #    sch_file_cont_lines = []
+        #    LIBS_lines = []
+        #    for line in ifile.readlines():
+        #        if "LIBS:" in line:
+        #            LIBS_lines.append(line)
+        #            if len(LIBS_lines) == 1:
+        #                line = "%s\n"
+        #            else:
+        #                line = None
+        #        if line is not None:
+        #            sch_file_cont_lines.append(line)
+        #    sch_file_cont = "".join(sch_file_cont_lines)
+        #    if sch_file_cont.count("%s") != 1:
+        #        print("Error: Could not find the LIBS: lines in %s" % target[0].name)
+        #        env.Exit(1)
+        pass
     else:
         # There is no existing schematic file, read in a template and modify it.
         sch_template = env.Dir('#site_scons/site_tools').abspath
@@ -156,32 +158,34 @@ def kicad_schematic_builder(target, source, env):
         with open("./site_scons/site_tools/kicad_project_template.sch", 'r') as ifile:
             sch_file_cont = "".join(ifile.readlines())
 
-    prj_items = sort_libs_and_pretties(target, source, env)
+        #prj_items = sort_libs_and_pretties(target, source, env)
+        #
+        #libs = []
+        #for r in prj_items['.lib']:
+        #    path = env.Dir('.').rel_path(r.srcnode())
+        #    basename = os.path.splitext(os.path.basename(path))[0]
+        #    libs.append((basename, os.path.split(path)[0].replace("\\", "/")))
+        #
+        ## Prepare the library lists for *.pro and *.sch files
+        #lib_dir = []
+        #lib_list_2 = []
+        #for i,(libn, libpath) in enumerate(libs,1):
+        #    libpath = "${KIPRJMOD}/%s"%libpath
+        #    if libpath not in lib_dir:
+        #        lib_dir.append(libpath)
+        #    lib_list_2.append("LIBS:%s" % libn)
+        #prj_name = os.path.splitext(os.path.basename(fs.abspath))[0]
+        #lib_list_2.append("LIBS:%s-cache"%prj_name)
+        lib_list_2 = ""
 
-    libs = []
-    for r in prj_items['.lib']:
-        path = env.Dir('.').rel_path(r.srcnode())
-        basename = os.path.splitext(os.path.basename(path))[0]
-        libs.append((basename, os.path.split(path)[0].replace("\\", "/")))
-
-    # Prepare the library lists for *.pro and *.sch files
-    lib_dir = []
-    lib_list_2 = []
-    for i,(libn, libpath) in enumerate(libs,1):
-        libpath = "${KIPRJMOD}/%s"%libpath
-        if libpath not in lib_dir:
-            lib_dir.append(libpath)
-        lib_list_2.append("LIBS:%s" % libn)
-    prj_name = os.path.splitext(os.path.basename(fs.abspath))[0]
-    lib_list_2.append("LIBS:%s-cache"%prj_name)
-
-    sch_file_cont = sch_file_cont % "\n".join(lib_list_2)
-    with open(fs.abspath, "w") as ofile:
-        ofile.write(sch_file_cont)
+        sch_file_cont = sch_file_cont % "\n".join(lib_list_2)
+        with open(fs.abspath, "w") as ofile:
+            ofile.write(sch_file_cont)
 
 
-def kicad_fplibtable_builder(target, source, env):
+def kicad_libtable_builder(target, source, env):
     fs = target[2]
+    ss = target[3]
 
     prj_items = sort_libs_and_pretties(target, source, env)
     
@@ -195,6 +199,17 @@ def kicad_fplibtable_builder(target, source, env):
 
     with open(fs.abspath, "w") as ofile:
         ofile.write(fp_lib_table)
+
+    sym_lib_table = ""
+    sym_lib_table += "(sym_lib_table\n"
+    for r in prj_items['.lib']:
+        path = env.Dir('.').rel_path(r.srcnode())
+        basename = os.path.splitext(os.path.basename(path))[0]
+        sym_lib_table += '  (lib (name %s)(type Legacy)(uri %s)(options "")(descr ""))\n' % (basename, "${KIPRJMOD}\%s"%path)
+    sym_lib_table += ")\n"
+
+    with open(ss.abspath, "w") as ofile:
+        ofile.write(sym_lib_table)
 
 
 def find(env):
@@ -226,8 +241,8 @@ def generate(env):
     second_action = SCons.Action.Action(kicad_schematic_builder,
               'Generating: "${__kicadprj_adjext(TARGET.name,".sch")}" (Schematic file for project)',
                show=builder_print_action())
-    third_action  = SCons.Action.Action(kicad_fplibtable_builder,
-              'Generating: "fp-lib-table" (Foot print table for the project)',
+    third_action  = SCons.Action.Action(kicad_libtable_builder,
+              'Generating: "fp-lib-table and sym-lib-table" (Footprint & symbol table for the project)',
                show=builder_print_action)
                
     kicad_prj_builder_action = [first_action, second_action, third_action]
