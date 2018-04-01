@@ -37,8 +37,9 @@ def kicadprj_Emitter(target, source, env):
         target.append(adjustixes(bs,'', '.sch'))
     if len(target) < 3:
         # third target is footprint lib table specific to the kicad project.
-        target.append("fp-lib-table")
-        target.append("sym-lib-table")
+        prj_dir = target[0].get_dir()
+        target.append(os.path.join(str(target[0].get_dir()), "fp-lib-table"))
+        target.append(os.path.join(str(target[0].get_dir()), "sym-lib-table"))
     return target, source
 
 

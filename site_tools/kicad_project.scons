@@ -1,0 +1,117 @@
+#-------------------------------------------------------------------------------
+# Copyright (C) 04/2018 Eyob Demissie
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in 
+# the Software without restriction, including without limitation the rights to use,
+# copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+# Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THETHE AUTHORS OR 
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# 
+# Except as contained in this notice, the name(s) of the above copyright holders 
+# shall not be used in advertising or otherwise to promote the sale, use or other
+# dealings in this Software without prior written authorization.
+#-------------------------------------------------------------------------------
+import os, urlparse, comp_dep_tree
+EnsurePythonVersion(2,7)
+EnsureSConsVersion(2,0,0)
+
+
+trgt_env = Environment(tools = ['Git', 'kicad_project', 'kicad_gerbers', 'kicad_xyrs'])
+trgt_env["result"] = {"lib":[], "pretty":[]}
+CDT = comp_dep_tree.ComponentDepTree()
+
+def get_caller_path():
+    """ This script is called by another script using SConscript(). Since
+    this script is repeatedly shared by other scripts, we need to find a way
+    to know which script called this instance of this script. We can then, pass
+    it along to CDT (component dependecy tracker).
+    Note that "call_stack" is a global internal variable used by scons to track
+    call frames for nested sconscript calls. We use it here because we have no
+    alternative in finding out which frame called this script. A hack,
+    but a neccessary one.
+    """
+    return call_stack[-1].prev_dir.abspath
+
+CDT.script_enter(get_caller_path())
+
+Import("COMPONENT_NAME", "IMPORTED_KICADLIBS", )
+
+#-----------------------------------------------------------------------------
+# Save the component absolute path.
+#-----------------------------------------------------------------------------
+component_path_abs = os.path.abspath(get_caller_path())
+
+#-----------------------------------------------------------------------------
+# Iterate through each dependency
+#-----------------------------------------------------------------------------
+trgt_env["result"]["lib"] = []
+trgt_env["result"]["pretty"] = []
+for (kicadlib_dst, kicadlib_url, kicadlib_ver) in IMPORTED_KICADLIBS:
+    # Check if the url
+    kicadlib_url_path = urlparse.urlparse(kicadlib_url)
+    if len(kicadlib_url_path[0]) > 1:
+        if "file://" in kicadlib_url:
+            kicadlib_dst = kicadlib_url
+        else:
+            # Get from remote location
+            branch_str = ""
+            if(kicadlib_ver.strip()):
+                branch_str = ' --branch=%s' % kicadlib_ver.strip()
+            trgt_env.GetComponentFromGit(kicadlib_dst, kicadlib_url + branch_str)
+            kicadlib_dst = trgt_env.Dir(kicadlib_dst).abspath
+    else:
+        kicadlib_dst = kicadlib_url
+
+    CDT.script_enter(kicadlib_dst, '*')
+    # Do a recursive search for .lib and .pretty
+    trgt_env["result"]["lib"] += trgt_env.FindComponentFiles(['lib'], exclude=[], search_root=kicadlib_dst, recursive=True)
+    trgt_env["result"]["pretty"] += trgt_env.FindComponentFiles(['pretty'], exclude=[], search_root=kicadlib_dst, recursive=True)
+    CDT.script_exit(kicadlib_dst, '*')
+
+
+#-----------------------------------------------------------------------------
+# Build the kicad project files
+#-----------------------------------------------------------------------------
+pro_file = os.path.join(component_path_abs, COMPONENT_NAME+".pro")
+kicad_prj = trgt_env.KiCadProject(pro_file , trgt_env["result"]["lib"] + trgt_env["result"]["pretty"])
+# WARNING: If the .pro and .sch files are not precious and noclean then you might
+# lose your files. So don't change the following lines without understing the consequences.
+trgt_env.Precious(kicad_prj)
+trgt_env.NoClean(kicad_prj)
+trgt_env.AlwaysBuild(kicad_prj)
+# Make this the default target, all others such as gerbers need to be excplicty built
+trgt_env.Default(kicad_prj)
+
+#-----------------------------------------------------------------------------
+# Build the kicad project files
+#-----------------------------------------------------------------------------
+#trgt_env.Execute("@$KICAD_PYTHONCOM --version")
+gerber_folder = os.path.join(component_path_abs, "gerbers")
+pcb_file = os.path.join(component_path_abs, COMPONENT_NAME+".kicad_pcb")
+kicad_gerbers = trgt_env.KiCadGerber(Dir(gerber_folder), pcb_file)
+trgt_env.Alias("gerbers", kicad_gerbers)
+
+#-----------------------------------------------------------------------------
+# Build the kicad xyrs file
+#-----------------------------------------------------------------------------
+bom_file = os.path.join(os.path.join(component_path_abs, "bom"), COMPONENT_NAME+".xyrs")
+kicad_xyrs = trgt_env.KiCadXYRS(bom_file, pcb_file)
+trgt_env.Alias("xyrs", kicad_xyrs)
+
+#-----------------------------------------------------------------------------
+# Build all
+#-----------------------------------------------------------------------------
+trgt_env.Alias("all", ["gerbers", "xyrs"])
+
+CDT.script_exit(get_caller_path())
