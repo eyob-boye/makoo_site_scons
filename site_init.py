@@ -114,7 +114,8 @@ def _FindComponentFiles(env, suffix=[], exclude=[], search_root=None, recursive=
 
     m_f=[]
     if recursive:
-        m_f = _glob_recursive(search_path, ["*."+ext for ext in suffix], [".git", ".svn", ".bzr", ".hg"])
+        exclude_norm = [os.path.normpath(e) for e in exclude]
+        m_f = _glob_recursive(search_path, ["*."+ext for ext in suffix], [".git", ".svn", ".bzr", ".hg"] + exclude + exclude_norm)
     else:
         for ext in suffix:
             for a in sorted(set([''])):
