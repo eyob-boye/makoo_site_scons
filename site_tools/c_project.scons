@@ -1,0 +1,248 @@
+#-------------------------------------------------------------------------------
+# Copyright (C) 04/2017 Eyob Demissie
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in 
+# the Software without restriction, including without limitation the rights to use,
+# copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+# Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THETHE AUTHORS OR 
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# 
+# Except as contained in this notice, the name(s) of the above copyright holders 
+# shall not be used in advertising or otherwise to promote the sale, use or other
+# dealings in this Software without prior written authorization.
+#-------------------------------------------------------------------------------
+import os, urlparse, comp_dep_tree, tinypy_build
+EnsurePythonVersion(2,7)
+EnsureSConsVersion(2,0,0)
+
+# If we cannot import 'trgt_env' then the root SConstruct is calling this. So
+# create the environment and CDT, then export them for subsequent uses of this
+# script.
+try:
+    Import("trgt_env")
+    this_is_root_script = False
+except :
+    this_is_root_script = True
+    trgt_env = Environment(tools = ['Git', 'codeblocks_ide_prj_gcc'])
+    trgt_env["result"] = {"components":[], "tpy_modules":[], "components_srcdirs":{},
+                          'source_c':[], 'source_s':[], 'source_h':[], 'libs':[],
+                          'link_script':[]}
+    CDT = comp_dep_tree.ComponentDepTree()
+    Export("trgt_env", "CDT")
+
+if not this_is_root_script:
+    Import("CDT")
+
+
+def get_caller_path():
+    """ This script is called by another script using SConscript(). Since
+    this script is repeatedly shared by other scripts, we need to find a way
+    to know which script called this instance of this script. We can then, pass
+    it along to CDT (component dependecy tracker).
+    Note that "call_stack" is a global internal variable used by scons to track
+    call frames for nested sconscript calls. We use it here because we have no
+    alternative in finding out which frame called this script. A hack,
+    but a neccessary one.
+    """
+    return call_stack[-1].prev_dir.abspath
+
+CDT.script_enter(get_caller_path())
+
+#The following are mandatory variables that need to be exported by caller.
+Import("COMPONENT_NAME", "IMPORTED_COMPONENTS")
+
+#Forgive if the COMPONENT_TPY_MODULES variable is not sent by the caller.
+try:
+    Import("COMPONENT_TPY_MODULES")
+except:
+    COMPONENT_TPY_MODULES = []
+
+#Forgive if the COMPONENT_SRCDIRS variable is not sent by the caller.
+try:
+    Import("COMPONENT_SRCDIRS")
+except:
+    COMPONENT_SRCDIRS = ["."]
+
+#Forgive if the COMPONENT_EXCLUDES variable is not sent by the caller.
+try:
+    Import("COMPONENT_EXCLUDES")
+except:
+    COMPONENT_EXCLUDES = []
+
+#-----------------------------------------------------------------------------
+# If the script that called this generic script exported srcdirs then save it.
+#-----------------------------------------------------------------------------
+c_abs = os.path.abspath(get_caller_path())
+#print(c_abs)
+if not trgt_env["result"]["components_srcdirs"].has_key(c_abs):
+    trgt_env["result"]["components_srcdirs"][c_abs] = COMPONENT_SRCDIRS
+
+#-----------------------------------------------------------------------------
+# If the script that called this generic script is a root add as a component
+#-----------------------------------------------------------------------------
+if this_is_root_script:
+    trgt_env["result"]["components"].append(c_abs)
+
+#-----------------------------------------------------------------------------
+# Append the component's tinypy modules to the result. If the component is
+# saying a folder is the tinypy module then, pickup all the py files out of
+# that folder.
+#-----------------------------------------------------------------------------
+for m in COMPONENT_TPY_MODULES:
+    m_abs = os.path.abspath(os.path.join(c_abs, m))
+    if os.path.isdir(m_abs):
+        for mm in trgt_env.FindComponentFiles(['py'], exclude=[], search_root=m_abs, recursive=False):
+            trgt_env["result"]["tpy_modules"].append(mm.abspath)
+    else:
+        trgt_env["result"]["tpy_modules"].append(m_abs)
+
+#-----------------------------------------------------------------------------
+# Iterate through each imported dependency
+#-----------------------------------------------------------------------------
+for (dst, url, ver) in IMPORTED_COMPONENTS:
+    # Check if the url
+    url_path = urlparse.urlparse(url)
+    if len(url_path[0]) > 1:
+        if "file://" in url:
+            dst = url
+        else:
+            # Get from remote location
+            dst = trgt_env.Dir(dst).abspath
+            fb = os.path.basename(dst)
+            branch_str = ""
+            if(ver.strip()):
+                branch_str = ' --branch=%s' % ver.strip()
+            trgt_env.GetComponentFromGit(dst, url + branch_str)
+    else:
+        dst = trgt_env.Dir(url).abspath
+
+    trgt_env["result"]["components"].append(dst)
+        
+    # Visit the destination and do a recursive call on script file
+    script_file = os.path.join(dst, 'sconscript')
+    if os.path.isfile(script_file):
+        SConscript(script_file)
+    else:
+        CDT.script_enter(dst, '*')
+        c_files = []
+        h_files = []
+        s_files = []
+        c_files += trgt_env.FindComponentFiles(['c'], exclude=COMPONENT_EXCLUDES, search_root=dst, recursive=True)
+        h_files += trgt_env.FindComponentFiles(['h'], exclude=COMPONENT_EXCLUDES, search_root=dst, recursive=True)
+        s_files += trgt_env.FindComponentFiles(['s','asm'], exclude=COMPONENT_EXCLUDES, search_root=dst, recursive=True)
+        trgt_env["result"]["source_c"] += c_files
+        trgt_env["result"]["source_h"] += h_files
+        trgt_env["result"]["source_s"] += s_files
+        CDT.script_exit(dst, '*')
+
+# Discover the source files
+c_files = []
+h_files = []
+s_files = []
+for d in COMPONENT_SRCDIRS:
+    search_root = os.path.abspath(os.path.join(c_abs, d))
+    #print(search_root)
+    c_files += trgt_env.FindComponentFiles(['c'], search_root=search_root, exclude=COMPONENT_EXCLUDES)
+    h_files += trgt_env.FindComponentFiles(['h'], search_root=search_root, exclude=COMPONENT_EXCLUDES)
+    s_files += trgt_env.FindComponentFiles(['s','asm'], search_root=search_root, exclude=COMPONENT_EXCLUDES)
+trgt_env["result"]["source_c"] += c_files
+trgt_env["result"]["source_h"] += h_files
+trgt_env["result"]["source_s"] += s_files
+    
+# If this is being called by a non-root script, then we return early.
+if not this_is_root_script:
+    CDT.script_exit(get_caller_path())
+    Return()
+
+#-----------------------------------------------------------------------------
+# The following is executed only in the root call (first instance) of
+# of this script.
+#-----------------------------------------------------------------------------
+
+# Eliminate duplicates without messing the original order
+trgt_env["result"]["components"] = sorted(set(trgt_env["result"]["components"]), key=lambda x:trgt_env["result"]["components"].index(x))
+
+# Build the tinypy modules and their initialization routines. Append to the
+# component list once done.
+tinypy_root = None
+for c in sorted(trgt_env["result"]["components"]):
+    if "tinypy" in os.path.basename(c)[:6]:
+        tinypy_root = c
+
+tinypy_includes = []
+if tinypy_root:
+    # First build the blob and then set as the new tinypy component
+    tinypy_app_buildpath = trgt_env.Dir("#imported/tinypy_app").abspath
+    if not os.path.isdir(tinypy_app_buildpath):
+        os.mkdir(tinypy_app_buildpath)
+    tinypy_build.build_blob(["math"],
+                            tinypy_root,
+                            tinypy_app_buildpath)
+    tinypy_includes = tinypy_build.get_pp_include_paths(["math"], tinypy_root)
+
+    # Then build the python module byte codes and their init code
+    if trgt_env["result"]["tpy_modules"]:
+        tinypy_build.build_app(trgt_env["result"]["tpy_modules"],
+                               tinypy_root, 
+                               tinypy_app_buildpath)
+
+    trgt_env["result"]["components"].remove(tinypy_root)
+    trgt_env["result"]["components"].append(tinypy_app_buildpath)
+
+
+#for c in trgt_env["result"]["source_c"]:
+#    print(c)
+
+app_name = COMPONENT_NAME.lower()
+ide_prj = 'tools/'+'codeblocks'+'/'+ app_name
+ide_prj = os.path.abspath(os.path.join(c_abs, ide_prj))
+ide_prj_items_all = trgt_env["result"]['source_c'] + \
+                    trgt_env["result"]['source_s'] + \
+                    trgt_env["result"]['source_h'] + \
+                    trgt_env["result"]['libs'] + \
+                    trgt_env["result"]['link_script']
+ide_prj_items_all = trgt_env.Flatten(ide_prj_items_all)
+ide_prj = trgt_env.IDEProject(ide_prj, ide_prj_items_all)
+trgt_env.Depends(ide_prj, ide_prj_items_all)
+trgt_env.Precious(ide_prj)
+trgt_env.NoClean(ide_prj)
+trgt_env.AlwaysBuild(ide_prj)
+#Create an alias for the IDE project file. For example, main_app_ide_prj
+trgt_env.Alias(app_name+'_ide_prj', ide_prj)
+
+## Build the project make file
+#prj_make_file_fmt = r"""
+#IDF_PATH := %s
+#export IDF_PATH
+##VERBOSE=1
+#
+#PROJECT_NAME := %s
+#
+#SRCDIRS = %s
+#
+#include $(IDF_PATH)/make/project.mk
+#"""
+#
+#prj_make_file = prj_make_file_fmt % (
+#       path_to_posix(trgt_env["esp_idf"]),
+#       COMPONENT_NAME,
+#       " ".join([path_to_posix(c) for c in trgt_env["result"]["components"]])
+#       )
+#
+#ofile_name = trgt_env.File("#Makefile").abspath
+#with open(ofile_name, "w") as ofile:
+#    ofile.write(prj_make_file)
+
+
+CDT.script_exit(get_caller_path())

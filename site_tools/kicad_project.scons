@@ -45,13 +45,7 @@ def get_caller_path():
 
 CDT.script_enter(get_caller_path())
 
-Import("COMPONENT_NAME", "IMPORTED_KICADLIBS")
-
-#Forgive if the EXCLUDES variable is not sent by the caller.
-try:
-    Import("IMPORTED_KICADLIBS_EXCLUDES")
-except:
-    IMPORTED_KICADLIBS_EXCLUDES = []
+Import("COMPONENT_NAME", "IMPORTED_KICADLIBS", )
 
 #-----------------------------------------------------------------------------
 # Save the component absolute path.
@@ -81,8 +75,8 @@ for (kicadlib_dst, kicadlib_url, kicadlib_ver) in IMPORTED_KICADLIBS:
 
     CDT.script_enter(kicadlib_dst, '*')
     # Do a recursive search for .lib and .pretty
-    trgt_env["result"]["lib"] += trgt_env.FindComponentFiles(['lib'], exclude=IMPORTED_KICADLIBS_EXCLUDES, search_root=kicadlib_dst, recursive=True)
-    trgt_env["result"]["pretty"] += trgt_env.FindComponentFiles(['pretty'], exclude=IMPORTED_KICADLIBS_EXCLUDES, search_root=kicadlib_dst, recursive=True)
+    trgt_env["result"]["lib"] += trgt_env.FindComponentFiles(['lib'], exclude=[], search_root=kicadlib_dst, recursive=True)
+    trgt_env["result"]["pretty"] += trgt_env.FindComponentFiles(['pretty'], exclude=[], search_root=kicadlib_dst, recursive=True)
     CDT.script_exit(kicadlib_dst, '*')
 
 
