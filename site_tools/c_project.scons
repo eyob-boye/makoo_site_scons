@@ -89,10 +89,15 @@ if not trgt_env["result"]["components_srcdirs"].has_key(c_abs):
     trgt_env["result"]["components_srcdirs"][c_abs] = COMPONENT_SRCDIRS
 
 #-----------------------------------------------------------------------------
-# If the script that called this generic script is a root add as a component
+# If the script that called this generic script is a root
 #-----------------------------------------------------------------------------
 if this_is_root_script:
     trgt_env["result"]["components"].append(c_abs)
+    trgt_env["result"]["component_excludes"] =  COMPONENT_EXCLUDES
+    c_excludes = COMPONENT_EXCLUDES
+else:
+    # Merge this component's exclude with the root exclude...
+    c_excludes = trgt_env["result"]["component_excludes"] + COMPONENT_EXCLUDES
 
 #-----------------------------------------------------------------------------
 # Append the component's tinypy modules to the result. If the component is
@@ -138,9 +143,9 @@ for (dst, url, ver) in IMPORTED_COMPONENTS:
         c_files = []
         h_files = []
         s_files = []
-        c_files += trgt_env.FindComponentFiles(['c'], exclude=COMPONENT_EXCLUDES, search_root=dst, recursive=True)
-        h_files += trgt_env.FindComponentFiles(['h'], exclude=COMPONENT_EXCLUDES, search_root=dst, recursive=True)
-        s_files += trgt_env.FindComponentFiles(['s','asm'], exclude=COMPONENT_EXCLUDES, search_root=dst, recursive=True)
+        c_files += trgt_env.FindComponentFiles(['c'], exclude=c_excludes, search_root=dst, recursive=True)
+        h_files += trgt_env.FindComponentFiles(['h'], exclude=c_excludes, search_root=dst, recursive=True)
+        s_files += trgt_env.FindComponentFiles(['s','asm'], exclude=c_excludes, search_root=dst, recursive=True)
         trgt_env["result"]["source_c"] += c_files
         trgt_env["result"]["source_h"] += h_files
         trgt_env["result"]["source_s"] += s_files
@@ -153,9 +158,9 @@ s_files = []
 for d in COMPONENT_SRCDIRS:
     search_root = os.path.abspath(os.path.join(c_abs, d))
     #print(search_root)
-    c_files += trgt_env.FindComponentFiles(['c'], search_root=search_root, exclude=COMPONENT_EXCLUDES)
-    h_files += trgt_env.FindComponentFiles(['h'], search_root=search_root, exclude=COMPONENT_EXCLUDES)
-    s_files += trgt_env.FindComponentFiles(['s','asm'], search_root=search_root, exclude=COMPONENT_EXCLUDES)
+    c_files += trgt_env.FindComponentFiles(['c'], search_root=search_root, exclude=c_excludes)
+    h_files += trgt_env.FindComponentFiles(['h'], search_root=search_root, exclude=c_excludes)
+    s_files += trgt_env.FindComponentFiles(['s','asm'], search_root=search_root, exclude=c_excludes)
 trgt_env["result"]["source_c"] += c_files
 trgt_env["result"]["source_h"] += h_files
 trgt_env["result"]["source_s"] += s_files

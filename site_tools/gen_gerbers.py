@@ -50,7 +50,7 @@ def gen_gerbers(filename, plot_folder):
     po.SetExcludeEdgeLayer(True)
     po.SetScale(1)
     po.SetUseAuxOrigin(False)
-    po.SetSubtractMaskFromSilk(False)
+    po.SetSubtractMaskFromSilk(True) #Without this if part outline silkscreen on top of pad, we are screwed.
     po.SetPlotReference(True)
     po.SetPlotValue(False)
 

@@ -67,7 +67,7 @@ def _GetComponentFromGit(env, target, source):
     if not os.path.exists(trgt):
         trgt_unix_like_path = env.Dir(trgt).srcnode().abspath
         trgt_unix_like_path = trgt_unix_like_path.replace('\\', '/')
-        print "nix ",source, trgt_unix_like_path
+        #print(source, trgt_unix_like_path)
         git_ret = gc_env.Execute('git clone --depth=1 --recursive -q -c advice.detachedHead=false %s "%s"' % (source, trgt_unix_like_path),
                                   show=gc_show_cmd(gc_env, trgt))
         if git_ret!=0:

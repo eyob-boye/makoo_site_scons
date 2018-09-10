@@ -183,11 +183,15 @@ def gen_xyrs(mods, comps, parts):
         if comps[r]["mpn"]:
             row.append(comps[r]["mpn"])
             row += [""]*3
-        elif parts[part]["mpn"]:
-            row.append(parts[part]["mpn"])
-            row += [""]*3
+        elif part in parts:
+            if(parts[part]["mpn"]):
+                row.append(parts[part]["mpn"])
+                row += [""]*3
+            else:
+                row += [""]*4
         else:
-            row += [""]*4
+            row.append(part)
+            row += [""]*3
         result.append("\t".join(row))
     return "\n".join(result)
 
